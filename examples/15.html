@@ -7,47 +7,34 @@
 <script src='https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js'></script>
 <script id="vs" type="x-shader/x-vertex">
     attribute vec3 position;
-    attribute vec3 normal;
     attribute vec4 color;
+    attribute vec2 textureCoord;
     uniform   mat4 mvpMatrix;
-    uniform   mat4 mMatrix;
-    varying   vec3 vPosition;
-    varying   vec3 vNormal;
     varying   vec4 vColor;
+    varying   vec2 vTextureCoord;
 
     void main(void){
-        vPosition   = (mMatrix * vec4(position, 1.0)).xyz;
-        vNormal     = normal;
-        vColor      = color;
-        gl_Position = mvpMatrix * vec4(position, 1.0);
+        vColor        = color;
+        vTextureCoord = textureCoord;
+        gl_Position   = mvpMatrix * vec4(position, 1.0);
     }
 </script>
 
 <script id="fs" type="x-shader/x-fragment">
     precision mediump float;
 
-    uniform mat4 invMatrix;
-    uniform vec3 lightPosition;
-    uniform vec3 cameraDirection;
-    uniform vec4 ambientColor;
-    varying vec3 vPosition;
-    varying vec3 vNormal;
-    varying vec4 vColor;
+    uniform sampler2D texture;
+    varying vec4      vColor;
+    varying vec2      vTextureCoord;
 
     void main(void){
-        vec3  lightVec  = lightPosition - vPosition;
-        vec3  invLight  = normalize(invMatrix * vec4(lightVec, 0.0)).xyz;
-        vec3  invCamera = normalize(invMatrix * vec4(cameraDirection, 0.0)).xyz;
-        vec3  halfLC    = normalize(invLight + invCamera);
-        float diffuse   = clamp(dot(vNormal, invLight), 0.0, 1.0) + 0.2;
-        float specular  = pow(clamp(dot(vNormal, halfLC), 0.0, 1.0), 50.0);
-        vec4  destColor = vColor * vec4(vec3(diffuse), 1.0) + vec4(vec3(specular), 1.0) + ambientColor;
-        gl_FragColor    = destColor;
+        vec4 smpColor = texture2D(texture, vTextureCoord);
+        gl_FragColor  = vColor * smpColor;
     }
 </script>
 
 <script type="text/javascript">
-    window.onload = () => {
+    window.onload = async () => {
         // canvasエレメントを取得
         const c = document.getElementById('canvas');
         c.width = 500;
@@ -60,36 +47,54 @@
         let SP = new ShaderProgram(gl, 'vs', 'fs');
         gl.useProgram(SP.program);
 
-        SP.addAttribute('position', 3);
-        SP.addAttribute('normal',   3);
-        SP.addAttribute('color',    4);
+        SP.addAttribute('position',     3);
+        SP.addAttribute('color',        4);
+        SP.addAttribute('textureCoord', 2);
         
         SP.addUniform('mvpMatrix');
-        SP.addUniform('mMatrix');
-        SP.addUniform('invMatrix');
-        SP.addUniform('lightPosition');
-        SP.addUniform('cameraDirection');
-        SP.addUniform('ambientColor');
+        SP.addUniform('texture');
         
         // ------------------------------< attribute >------------------------------
+
+        // 頂点の位置
+        let position = [
+            -1.0,  1.0,  0.0,
+            1.0,  1.0,  0.0,
+            -1.0, -1.0,  0.0,
+            1.0, -1.0,  0.0
+        ];
+
+        // 頂点色
+        let color = [
+            1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0
+        ];
+
+        // テクスチャ座標
+        let textureCoord = [
+            0.0, 0.0,
+            1.0, 0.0,
+            0.0, 1.0,
+            1.0, 1.0
+        ];
+
+        // 頂点インデックス
+        let index = [
+            2, 1, 0,
+            1, 2, 3
+        ];
         
-        // トーラスのデータを生成
-        let torus = new Torus(32, 32, 1.0, 2.0, [0.2, 0.7, 0.7, 1.0]);
-        let torusData = {
-            pos : SP.createVbo(torus.position),
-            nor : SP.createVbo(torus.normal),
-            col : SP.createVbo(torus.color),
-            ibo : SP.createIbo(torus.index)
+
+        let planeData = {
+            pos : SP.createVbo(position),
+            col : SP.createVbo(color),
+            tex : SP.createVbo(textureCoord),
+            ibo : SP.createIbo(index)
         }
 
-        // 球体のデータを生成
-        let sphere = new Sphere(64, 64, 2.0, [0.7, 0.2, 0.1, 1.0]);
-        let sphereData = {
-            pos : SP.createVbo(sphere.position),
-            nor : SP.createVbo(sphere.normal),
-            col : SP.createVbo(sphere.color),
-            ibo : SP.createIbo(sphere.index)
-        }
+        SP.setAttribute([planeData.pos, planeData.col, planeData.tex], planeData.ibo);
 
     
     // ------------------------------< uniform >------------------------------
@@ -104,7 +109,7 @@
         mat4.perspective(pMatrix, Math.PI / 4, c.width / c.height, 1, 100);
 
         // view
-        const cameraPosition = [0, 0, 20];
+        const cameraPosition = [0, 2, 5];
         const lookAtPosition = [0, 0, 0];
         const upDirection    = [0, 1, 0];
         mat4.lookAt(vMatrix, cameraPosition, lookAtPosition, upDirection);
@@ -113,59 +118,33 @@
         mat4.multiply(vpMatrix, vpMatrix, pMatrix);
         mat4.multiply(vpMatrix, vpMatrix, vMatrix);
 
-    // ------------------------------< loop >------------------------------
-        // light
-        let lightPosition = [0.0, 0.0, 0.0];    // 点光源位置
-        let cameraDirection = cameraPosition;
-        let ambientColor = [0.1, 0.1, 0.1, 1.0];
+        gl.activeTexture(gl.TEXTURE0);
+        
+        // テクスチャを生成
+        let texture = await SP.createTexture('../sozai/po_128x128.png');
+        console.log(texture);
 
+    // ------------------------------< loop >------------------------------
         let count = 0;
         function loop(){
             count++;
             let rad = (count % 360) * Math.PI / 180;
-            let tx = Math.cos(rad) * 5;
-            let ty = Math.sin(rad) * 5;
-            let tz = Math.sin(rad) * 5;
 
             SP.clearScene();
+
             
-            
-            // draw torus
-            SP.setAttribute([torusData.pos, torusData.nor, torusData.col], torusData.ibo);
-    
             mMatrix = mat4.create();
-            mat4.translate(mMatrix, mMatrix, [tx, ty, tz]);
-            mat4.rotate(mMatrix, mMatrix, rad, [0, 1, 1]);
+            mat4.rotate(mMatrix, mMatrix, rad, [0, 1, 0]);
             mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
-            mat4.invert(invMatrix, mMatrix);
-
-            gl.uniformMatrix4fv(SP.getUniLocation('mvpMatrix'), false, mvpMatrix);
-            gl.uniformMatrix4fv(SP.getUniLocation('mMatrix'), false, mMatrix);
-            gl.uniformMatrix4fv(SP.getUniLocation('invMatrix'), false, invMatrix);
-            gl.uniform3fv(SP.getUniLocation('lightPosition'), lightPosition);
-            gl.uniform3fv(SP.getUniLocation('cameraDirection'), cameraDirection);
-            gl.uniform4fv(SP.getUniLocation('ambientColor'), ambientColor);
             
-            gl.drawElements(gl.TRIANGLES, torus.index.length, gl.UNSIGNED_SHORT, 0);
+            // テクスチャをバインドする
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+        
+            gl.uniform1i(SP.getUniLocation('texture'), 0);
+            gl.uniformMatrix4fv(SP.getUniLocation('mvpMatrix'), false, mvpMatrix);    
+            gl.drawElements(gl.TRIANGLES, index.length, gl.UNSIGNED_SHORT, 0);
 
-            // draw sphere
-            SP.setAttribute([sphereData.pos, sphereData.nor, sphereData.col], sphereData.ibo);
-
-            mMatrix = mat4.create();
-            mat4.translate(mMatrix, mMatrix, [-tx, -ty, -tz]);
-            mat4.rotate(mMatrix, mMatrix, rad, [0, 1, 1]);
-            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
-            mat4.invert(invMatrix, mMatrix);
-            
-            gl.uniformMatrix4fv(SP.getUniLocation('mvpMatrix'), false, mvpMatrix);
-            gl.uniformMatrix4fv(SP.getUniLocation('mMatrix'), false, mMatrix);
-            gl.uniformMatrix4fv(SP.getUniLocation('invMatrix'), false, invMatrix);
-            gl.uniform3fv(SP.getUniLocation('lightPosition'), lightPosition);
-            gl.uniform3fv(SP.getUniLocation('cameraDirection'), cameraDirection);
-            gl.uniform4fv(SP.getUniLocation('ambientColor'), ambientColor);
-
-            gl.drawElements(gl.TRIANGLES, sphere.index.length, gl.UNSIGNED_SHORT, 0);
-            
+ 
             // 描画
             gl.flush();
     
@@ -195,7 +174,7 @@
             // culling and depthtest
             this.gl.enable(this.gl.DEPTH_TEST);
             this.gl.depthFunc(this.gl.LEQUAL);
-            this.gl.enable(this.gl.CULL_FACE);
+            // this.gl.enable(this.gl.CULL_FACE);
         }
     
         // シェーダを生成する関数
@@ -234,12 +213,29 @@
         }
 
         // IBOを生成する関数
-        createIbo(data){
+        createIbo(data) {
             let ibo = this.gl.createBuffer();            
             this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, ibo);
             this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, new Int16Array(data), this.gl.STATIC_DRAW);
             this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, null);
             return ibo;
+        }
+
+        // テクスチャを生成する関数
+        createTexture(source) {
+            return new Promise((resolve, reject) => {   
+                let img = new Image();
+                img.onload = () => {
+                    let tex = this.gl.createTexture();
+                    this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
+                    this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, img);
+                    this.gl.generateMipmap(this.gl.TEXTURE_2D);
+                    this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+                    resolve(tex);
+                };
+                img.onerror = (e) => reject(e);
+                img.src = source;
+            });
         }
 
         // VBOをバインドし登録する関数
