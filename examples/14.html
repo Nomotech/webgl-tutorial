@@ -139,12 +139,12 @@
             mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
             mat4.invert(invMatrix, mMatrix);
 
-            gl.uniformMatrix4fv(SP.getUniLocation('mvpMatrix'), false, mvpMatrix);
-            gl.uniformMatrix4fv(SP.getUniLocation('mMatrix'), false, mMatrix);
-            gl.uniformMatrix4fv(SP.getUniLocation('invMatrix'), false, invMatrix);
-            gl.uniform3fv(SP.getUniLocation('lightPosition'), lightPosition);
-            gl.uniform3fv(SP.getUniLocation('cameraDirection'), cameraDirection);
-            gl.uniform4fv(SP.getUniLocation('ambientColor'), ambientColor);
+            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.uniformMatrix4fv(SP.getUniform('mMatrix').location, false, mMatrix);
+            gl.uniformMatrix4fv(SP.getUniform('invMatrix').location, false, invMatrix);
+            gl.uniform3fv(SP.getUniform('lightPosition').location, lightPosition);
+            gl.uniform3fv(SP.getUniform('cameraDirection').location, cameraDirection);
+            gl.uniform4fv(SP.getUniform('ambientColor').location, ambientColor);
             
             gl.drawElements(gl.TRIANGLES, torus.index.length, gl.UNSIGNED_SHORT, 0);
 
@@ -157,12 +157,12 @@
             mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
             mat4.invert(invMatrix, mMatrix);
             
-            gl.uniformMatrix4fv(SP.getUniLocation('mvpMatrix'), false, mvpMatrix);
-            gl.uniformMatrix4fv(SP.getUniLocation('mMatrix'), false, mMatrix);
-            gl.uniformMatrix4fv(SP.getUniLocation('invMatrix'), false, invMatrix);
-            gl.uniform3fv(SP.getUniLocation('lightPosition'), lightPosition);
-            gl.uniform3fv(SP.getUniLocation('cameraDirection'), cameraDirection);
-            gl.uniform4fv(SP.getUniLocation('ambientColor'), ambientColor);
+            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.uniformMatrix4fv(SP.getUniform('mMatrix').location, false, mMatrix);
+            gl.uniformMatrix4fv(SP.getUniform('invMatrix').location, false, invMatrix);
+            gl.uniform3fv(SP.getUniform('lightPosition').location, lightPosition);
+            gl.uniform3fv(SP.getUniform('cameraDirection').location, cameraDirection);
+            gl.uniform4fv(SP.getUniform('ambientColor').location, ambientColor);
 
             gl.drawElements(gl.TRIANGLES, sphere.index.length, gl.UNSIGNED_SHORT, 0);
             
@@ -271,8 +271,8 @@
             });
         }
 
-        getUniLocation(name) {
-            return this.uniArray.find((uni) => (uni.name === name)).location;
+        getUniform(name) {
+            return this.uniArray.find((uni) => (uni.name === name));
         }
 
         clearScene() {

@@ -182,11 +182,11 @@
 
             mat4.invert(invMatrix, mMatrix);
             
-            gl.uniformMatrix4fv(nowPrg.getUniLocation('mvpMatrix'), false, mvpMatrix);
-            gl.uniformMatrix4fv(nowPrg.getUniLocation('invMatrix'), false, invMatrix);
-            gl.uniform3fv(nowPrg.getUniLocation('lightDirection'), lightDirection);
-            gl.uniform3fv(nowPrg.getUniLocation('cameraDirection'), cameraDirection);
-            gl.uniform4fv(nowPrg.getUniLocation('ambientColor'), ambientColor);
+            gl.uniformMatrix4fv(nowPrg.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.uniformMatrix4fv(nowPrg.getUniform('invMatrix').location, false, invMatrix);
+            gl.uniform3fv(nowPrg.getUniform('lightDirection').location, lightDirection);
+            gl.uniform3fv(nowPrg.getUniform('cameraDirection').location, cameraDirection);
+            gl.uniform4fv(nowPrg.getUniform('ambientColor').location, ambientColor);
             
             gl.drawElements(gl.TRIANGLES, torus.index.length, gl.UNSIGNED_SHORT, 0);
             
@@ -295,8 +295,8 @@
             });
         }
 
-        getUniLocation(name) {
-            return this.uniArray.find((uni) => (uni.name === name)).location;
+        getUniform(name) {
+            return this.uniArray.find((uni) => (uni.name === name));
         }
 
         clearScene() {
