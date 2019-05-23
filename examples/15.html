@@ -118,11 +118,10 @@
         mat4.multiply(vpMatrix, vpMatrix, pMatrix);
         mat4.multiply(vpMatrix, vpMatrix, vMatrix);
 
-        gl.activeTexture(gl.TEXTURE0);
         
         // テクスチャを生成
         let texture = await SP.createTexture('../sozai/po_128x128.png');
-        console.log(texture);
+        SP.addTexture('texture', texture);
 
     // ------------------------------< loop >------------------------------
         let count = 0;
@@ -131,17 +130,14 @@
             let rad = (count % 360) * Math.PI / 180;
 
             SP.clearScene();
-
             
             mMatrix = mat4.create();
             mat4.rotate(mMatrix, mMatrix, rad, [0, 1, 0]);
             mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
             
-            // テクスチャをバインドする
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-        
-            gl.uniform1i(SP.getUniLocation('texture'), 0);
-            gl.uniformMatrix4fv(SP.getUniLocation('mvpMatrix'), false, mvpMatrix);    
+            SP.useTexture('texture');
+
+            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);    
             gl.drawElements(gl.TRIANGLES, index.length, gl.UNSIGNED_SHORT, 0);
 
  
@@ -167,6 +163,7 @@
 
             this.attArray = new Array();
             this.uniArray = new Array();
+            this.textNum = 0;
 
             this.vbo = null;
             this.ibo = null;
@@ -238,6 +235,20 @@
             });
         }
 
+        addTexture(name, texture) {
+            let uni = this.getUniform(name);
+            uni.texture = texture;
+            uni.textNum = this.textNum;
+            this.textNum++;
+        }
+
+        useTexture(name) {
+            let uni = this.getUniform(name);
+            this.gl.activeTexture(this.gl.TEXTURE0);
+            this.gl.bindTexture(this.gl.TEXTURE_2D, uni.texture);
+            this.gl.uniform1i(uni.location, 0);
+        }
+
         // VBOをバインドし登録する関数
         setAttribute(vbo, ibo){
             this.vbo = vbo;            
@@ -267,8 +278,8 @@
             });
         }
 
-        getUniLocation(name) {
-            return this.uniArray.find((uni) => (uni.name === name)).location;
+        getUniform(name) {
+            return this.uniArray.find((uni) => (uni.name === name));
         }
 
         clearScene() {
