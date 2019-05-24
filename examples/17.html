@@ -6,15 +6,16 @@
 <canvas id="canvas"></canvas><br/>
 <script src='https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js'></script>
 <script id="vs" type="x-shader/x-vertex">
-    attribute vec3 position;
-    attribute vec4 color;
-    attribute vec2 textureCoord;
-    uniform   mat4 mvpMatrix;
-    varying   vec4 vColor;
-    varying   vec2 vTextureCoord;
-
+    attribute vec3  position;
+    attribute vec4  color;
+    attribute vec2  textureCoord;
+    uniform   mat4  mvpMatrix;
+    uniform   float vertexAlpha;
+    varying   vec4  vColor;
+    varying   vec2  vTextureCoord;
+    
     void main(void){
-        vColor        = color;
+        vColor        = vec4(color.rgb, color.a * vertexAlpha);
         vTextureCoord = textureCoord;
         gl_Position   = mvpMatrix * vec4(position, 1.0);
     }
@@ -23,15 +24,20 @@
 <script id="fs" type="x-shader/x-fragment">
     precision mediump float;
 
-    uniform sampler2D texture0;
-    uniform sampler2D texture1;
+    uniform sampler2D texture;
+    uniform int       useTexture;
     varying vec4      vColor;
     varying vec2      vTextureCoord;
-
+    
     void main(void){
-        vec4 smpColor0 = texture2D(texture0, vTextureCoord);
-        vec4 smpColor1 = texture2D(texture1, vTextureCoord);
-        gl_FragColor   = vColor * smpColor0 * smpColor1;
+        vec4 destColor = vec4(0.0);
+        if(bool(useTexture)){
+            vec4 smpColor = texture2D(texture, vTextureCoord);
+            destColor = vColor * smpColor;
+        }else{
+            destColor = vColor;
+        }
+        gl_FragColor = destColor;
     }
 </script>
 
@@ -54,8 +60,9 @@
         SP.addAttribute('textureCoord', 2);
         
         SP.addUniform('mvpMatrix');
-        SP.addUniform('texture0');
-        SP.addUniform('texture1');
+        SP.addUniform('vertexAlpha');
+        SP.addUniform('texture');
+        SP.addUniform('useTexture');
 
         // ------------------------------< attribute >------------------------------
 
@@ -69,9 +76,9 @@
 
         // 頂点色
         let color = [
-            1.0, 1.0, 1.0, 1.0,
-            1.0, 1.0, 1.0, 1.0,
-            1.0, 1.0, 1.0, 1.0,
+            1.0, 0.0, 0.0, 1.0,
+            0.0, 1.0, 0.0, 1.0,
+            0.0, 0.0, 1.0, 1.0,
             1.0, 1.0, 1.0, 1.0
         ];
 
@@ -123,27 +130,45 @@
 
         
         // テクスチャを生成
-        let texture0 = await SP.createTexture('../sozai/po_128x128.png');
-        SP.addTexture('texture0', texture0);
-        let texture1 = await SP.createTexture('../sozai/green_128x128.png');
-        SP.addTexture('texture1', texture1);
+        let texture = await SP.createTexture('../sozai/po_128x128.png');
+        SP.addTexture('texture', texture);
 
     // ------------------------------< loop >------------------------------
         let count = 0;
         function loop(){
             count++;
-            let rad = (count % 360) * Math.PI / 180;
+            let rad = (count / 10 % 360) * Math.PI / 180;
 
             SP.clearScene();
-            
-            mMatrix = mat4.create();
-            mat4.rotate(mMatrix, mMatrix, rad, [0, 1, 0]);
-            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
-            
-            SP.useTexture('texture0');
-            SP.useTexture('texture1');
 
-            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);    
+            SP.setBlendType(1);            
+            let vertexAlpha = 0.5;
+            
+            // 
+            mMatrix = mat4.create();
+            mat4.rotate(mMatrix, mMatrix, rad * 11, [0, 1, 1]);
+            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
+
+            SP.useTexture('texture');
+            gl.disable(gl.BLEND);
+
+            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.uniform1f(SP.getUniform('vertexAlpha').location, 1.0);
+            gl.uniform1i(SP.getUniform('useTexture').location, true);
+            gl.drawElements(gl.TRIANGLES, index.length, gl.UNSIGNED_SHORT, 0);
+
+            // 
+            mMatrix = mat4.create();
+            mat4.rotate(mMatrix, mMatrix, rad * 7, [1, 1, 0]);
+            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
+
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            SP.useTexture('texture');
+            gl.enable(gl.BLEND);
+
+            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.uniform1f(SP.getUniform('vertexAlpha').location, vertexAlpha);
+            gl.uniform1i(SP.getUniform('useTexture').location, false);
             gl.drawElements(gl.TRIANGLES, index.length, gl.UNSIGNED_SHORT, 0);
 
  
@@ -255,6 +280,21 @@
             this.gl.uniform1i(uni.location, uni.textNum);
         }
 
+        // ブレンドタイプを設定する関数
+        setBlendType(prm){
+            switch(prm){
+                // 透過処理
+                case 0:
+                    this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+                    break;
+                // 加算合成
+                case 1:
+                this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE);
+                    break;
+                default:
+                    break;
+            }
+        }
         // VBOをバインドし登録する関数
         setAttribute(vbo, ibo){
             this.vbo = vbo;            
