@@ -140,10 +140,10 @@
             let rad = (count / 10 % 360) * Math.PI / 180;
 
             SP.clearScene();
+            // gl.blendFunc(gl.ONE, gl.ONE);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
-            SP.setBlendType(1);            
-            let vertexAlpha = 0.5;
-            
+        
             // 
             mMatrix = mat4.create();
             mat4.rotate(mMatrix, mMatrix, rad * 11, [0, 1, 1]);
@@ -167,11 +167,10 @@
             gl.enable(gl.BLEND);
 
             gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
-            gl.uniform1f(SP.getUniform('vertexAlpha').location, vertexAlpha);
+            gl.uniform1f(SP.getUniform('vertexAlpha').location, 0.5);
             gl.uniform1i(SP.getUniform('useTexture').location, false);
             gl.drawElements(gl.TRIANGLES, index.length, gl.UNSIGNED_SHORT, 0);
 
- 
             // 描画
             gl.flush();
     
@@ -280,21 +279,6 @@
             this.gl.uniform1i(uni.location, uni.textNum);
         }
 
-        // ブレンドタイプを設定する関数
-        setBlendType(prm){
-            switch(prm){
-                // 透過処理
-                case 0:
-                    this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
-                    break;
-                // 加算合成
-                case 1:
-                this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE);
-                    break;
-                default:
-                    break;
-            }
-        }
         // VBOをバインドし登録する関数
         setAttribute(vbo, ibo){
             this.vbo = vbo;            
