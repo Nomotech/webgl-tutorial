@@ -98,6 +98,25 @@
 	    let camUpDirection = [0, 1, 0];
         let lookAtPosition = [0, 0, 0];
 
+    // mouse event
+        let mouseMove = (e) => {
+            let cw = c.width;
+            let ch = c.height;
+            let wh = 1 / Math.sqrt(cw * cw + ch * ch);
+            let x = e.clientX - c.offsetLeft - cw / 2;
+            let y = e.clientY - c.offsetTop  - ch / 2;
+            let sq = Math.sqrt(x * x + y * y);
+            let r = sq * 2.0 * Math.PI * wh;
+            if (sq != 1) {
+                sq = 1 / sq;
+                x *= sq;
+                y *= sq;
+            }
+            quat.setAxisAngle(q, [y, x, 0], -r);
+            quat.normalize(q, q);
+        }
+        c.addEventListener('mousemove', mouseMove);
+
     // ------------------------------< loop >------------------------------
         let count = 0;
         function loop(){
@@ -106,8 +125,6 @@
 
             SP.clearScene();
 
-            quat.setAxisAngle(q, [1, 1, 0], rad);
-            quat.normalize(q, q);
             vec3.transformQuat(camPosition,     [0, 0, 10], q);
             vec3.transformQuat(camUpDirection,  [0, 1, 0],  q);
 
