@@ -112,7 +112,7 @@
         let mvpMatrix = mat4.create();
         let invMatrix = mat4.create();
         
-        let lightPosition = [50.0, 50.0, 50.0];
+        let lightPosition = [50.0, 50.0, -50.0];
         let ambientColor = [0.1, 0.1, 0.1, 1.0];
 
         let q = quat.create();
@@ -146,7 +146,7 @@
         let count = 0;
         function loop(){
             count++;
-            let rad = (count % 360) * Math.PI / 180;
+            let rad = ((count / 10) % 360) * Math.PI / 180;
 
             SP.clearScene();
 

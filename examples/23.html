@@ -7,10 +7,11 @@
 <canvas id="canvas"></canvas><br/>
 <div class="btn-group btn-group-toggle" data-toggle="buttons">
     <label class="btn btn-primary active"><input type="radio" name="options" id="0" autocomplete="off" checked>Input</label>
-    <label class="btn btn-primary"><input type="radio" name="options" id="1" autocomplete="off">Sobel</label>
-    <label class="btn btn-primary"><input type="radio" name="options" id="2" autocomplete="off">gray</label>
-    <label class="btn btn-primary"><input type="radio" name="options" id="3" autocomplete="off">blur</label>
-    <label class="btn btn-primary"><input type="radio" name="options" id="4" autocomplete="off">reverse</label>
+    <label class="btn btn-primary"><input type="radio" name="options" id="5" autocomplete="off">Blur</label>
+    <label class="btn btn-primary"><input type="radio" name="options" id="1" autocomplete="off">Gray</label>
+    <label class="btn btn-primary"><input type="radio" name="options" id="2" autocomplete="off">Sobel</label>
+    <label class="btn btn-primary"><input type="radio" name="options" id="3" autocomplete="off">Laplacian</label>
+    <label class="btn btn-primary"><input type="radio" name="options" id="4" autocomplete="off">Reverse</label>
 </div>
 <script src='https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js'></script>
 
@@ -112,22 +113,31 @@
         mat3 blur   = mat3(  0.1,  0.1,  0.1,
                              0.1,  0.2,  0.1,
                              0.1,  0.1,  0.1);
+        mat3 laplacian = mat3( 1,  1,  1,
+                               1, -8,  1,
+                               1,  1,  1);
 
         if (filterType == 0) {
             color = filter(texture, normal);
         } else if (filterType == 1) {
+            color = filter(texture, normal);
+            const float redScale   = 0.298912;
+            const float greenScale = 0.586611;
+            const float blueScale  = 0.114478;
+            const vec3  monochromeScale = vec3(redScale, greenScale, blueScale);
+            float grayColor = dot(color.rgb, monochromeScale);
+            color = vec4(vec3(grayColor), 1.0);
+        } else if (filterType == 2) {
             color = filter(texture, sobelV) + filter(texture, sobelH);
             color /= 2.0;
-        } else if (filterType == 2) {
-            color = filter(texture, normal);
-            float c = (color.r + color.g + color.b / 3.0);
-            color = vec4(c, c, c, 1.0);
         } else if (filterType == 3) {
-            color = filter(texture, blur);
+            color = filter(texture, laplacian);
         } else if (filterType == 4) {
             color = filter(texture, normal);
             color = vec4(1.0) - color;
             color.a = 1.0;
+        } else if (filterType == 5) {
+            color = filter(texture, blur);        
         }
         gl_FragColor = vColor * color;
     }
