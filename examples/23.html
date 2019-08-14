@@ -3,9 +3,19 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
 
+
 <canvas id="canvas"></canvas><br/>
+<div class="btn-group btn-group-toggle" data-toggle="buttons">
+    <label class="btn btn-primary active"><input type="radio" name="options" id="0" autocomplete="off" checked>Input</label>
+    <label class="btn btn-primary"><input type="radio" name="options" id="5" autocomplete="off">Blur</label>
+    <label class="btn btn-primary"><input type="radio" name="options" id="1" autocomplete="off">Gray</label>
+    <label class="btn btn-primary"><input type="radio" name="options" id="2" autocomplete="off">Sobel</label>
+    <label class="btn btn-primary"><input type="radio" name="options" id="3" autocomplete="off">Laplacian</label>
+    <label class="btn btn-primary"><input type="radio" name="options" id="4" autocomplete="off">Reverse</label>
+</div>
 <script src='https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js'></script>
-<script id="vs" type="x-shader/x-vertex">
+
+<script id="vs1" type="x-shader/x-vertex">
     attribute vec3 position;
     attribute vec3 normal;
     attribute vec4 color;
@@ -23,7 +33,7 @@
     }	
 </script>
 
-<script id="fs" type="x-shader/x-fragment">
+<script id="fs1" type="x-shader/x-fragment">
     precision mediump float;
 
     uniform mat4 invMatrix;
@@ -46,18 +56,109 @@
     }
 </script>
 
+<script id="vs2" type="x-shader/x-vertex">
+    attribute vec3 position;
+    attribute vec4 color;
+    uniform   mat4 mvpMatrix;
+    varying   vec4 vColor;
+    
+    void main(void){
+        vColor      = color;
+        gl_Position = mvpMatrix * vec4(position, 1.0);
+    }
+</script>
+            
+<script id="fs2" type="x-shader/x-fragment">
+    precision mediump float;
+    
+    uniform sampler2D texture;
+    uniform int filterType;
+    varying vec4      vColor;
+    
+    vec4 filter (sampler2D tex, mat3 coef) {
+        vec2 tFrag = vec2(1.0 / 500.0);
+        vec4 color = vec4(0.0, 0.0, 0.0, 1.0);
+        
+        // |-----|-----|-----|
+        // | p00 | p01 | p02 |
+        // |-----|-----|-----|
+        // | p10 | p11 | p12 |
+        // |-----|-----|-----|
+        // | p20 | p21 | p22 |
+        // |-----|-----|-----|
+        
+        color += texture2D(tex, (gl_FragCoord.st + vec2(-1.0, -1.0)) * tFrag) * coef[0][0];
+        color += texture2D(tex, (gl_FragCoord.st + vec2( 0.0, -1.0)) * tFrag) * coef[1][0];
+        color += texture2D(tex, (gl_FragCoord.st + vec2( 1.0, -1.0)) * tFrag) * coef[2][0];
+        color += texture2D(tex, (gl_FragCoord.st + vec2(-1.0,  0.0)) * tFrag) * coef[0][1];
+        color += texture2D(tex, (gl_FragCoord.st + vec2( 0.0,  0.0)) * tFrag) * coef[1][1];
+        color += texture2D(tex, (gl_FragCoord.st + vec2( 1.0,  0.0)) * tFrag) * coef[2][1];
+        color += texture2D(tex, (gl_FragCoord.st + vec2(-1.0,  1.0)) * tFrag) * coef[0][2];
+        color += texture2D(tex, (gl_FragCoord.st + vec2( 0.0,  1.0)) * tFrag) * coef[1][2];
+        color += texture2D(tex, (gl_FragCoord.st + vec2( 1.0,  1.0)) * tFrag) * coef[2][2];
+        return color;
+    }
+
+    void main(void){
+        vec4 color;
+        mat3 normal = mat3(  0.0,  0.0,  0.0,
+                             0.0,  1.0,  0.0,
+                             0.0,  0.0,  0.0);
+        mat3 sobelV  = mat3( -1.0, -1.0, -1.0,
+                              0.0,  0.0,  0.0,
+                              1.0,  1.0,  1.0);
+        mat3 sobelH  = mat3( -1.0,  0.0,  1.0,
+                             -1.0,  0.0,  1.0,
+                             -1.0,  0.0,  1.0);
+        mat3 blur   = mat3(  0.1,  0.1,  0.1,
+                             0.1,  0.2,  0.1,
+                             0.1,  0.1,  0.1);
+        mat3 laplacian = mat3( 1,  1,  1,
+                               1, -8,  1,
+                               1,  1,  1);
+
+        if (filterType == 0) {
+            color = filter(texture, normal);
+        } else if (filterType == 1) {
+            color = filter(texture, normal);
+            const float redScale   = 0.298912;
+            const float greenScale = 0.586611;
+            const float blueScale  = 0.114478;
+            const vec3  monochromeScale = vec3(redScale, greenScale, blueScale);
+            float grayColor = dot(color.rgb, monochromeScale);
+            color = vec4(vec3(grayColor), 1.0);
+        } else if (filterType == 2) {
+            color = filter(texture, sobelV) + filter(texture, sobelH);
+            color /= 2.0;
+        } else if (filterType == 3) {
+            color = filter(texture, laplacian);
+        } else if (filterType == 4) {
+            color = filter(texture, normal);
+            color = vec4(1.0) - color;
+            color.a = 1.0;
+        } else if (filterType == 5) {
+            color = filter(texture, blur);        
+        }
+        gl_FragColor = vColor * color;
+    }
+</script>
+
 <script type="text/javascript">
+    let type = 0;
+    $('input[name="options"]:radio').change(function () {
+        type = Number($(this).attr('id'));
+    })
     window.onload = async () => {
         // canvasエレメントを取得
         const c = document.getElementById('canvas');
         c.width = 500;
-        c.height = 400;
+        c.height = 500;
 
         // webglコンテキストを取得
-        const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+        const gl = c.getContext('webgl' , {stencil: true}) || c.getContext('experimental-webgl', {stencil: true});
        
-        // shader program
-        let SP = new ShaderProgram(gl, 'vs', 'fs');
+    // ------------------------------< shader program 1 >------------------------------
+        let SP = new ShaderProgram(gl, 'vs1', 'fs1');
         gl.useProgram(SP.program);
 
         SP.addAttribute('position', 3);
@@ -72,17 +173,14 @@
         SP.addUniform('ambientColor');
 
         // ------------------------------< attribute >------------------------------
-
         // トーラスのデータを生成
         let torus = new Torus(32, 32, 0.5, 1.5);
         const pos_vbo = SP.createVbo(torus.position);
         const nor_vbo = SP.createVbo(torus.normal);
         const col_vbo = SP.createVbo(torus.color);
         const ibo     = SP.createIbo(torus.index);
-        SP.setAttribute([pos_vbo, nor_vbo, col_vbo], ibo);
-    
-    
-    // ------------------------------< uniform >------------------------------
+        
+        // ------------------------------< uniform >------------------------------
         let pMatrix = mat4.create();
         let vMatrix  = mat4.create();
         let mMatrix = mat4.create();
@@ -98,12 +196,70 @@
 	    let camUpDirection = [0, 1, 0];
         let lookAtPosition = [0, 0, 0];
 
-    // mouse event
+    // ------------------------------< shader program 2 >------------------------------
+        let SP2 = new ShaderProgram(gl, 'vs2', 'fs2');
+        gl.useProgram(SP2.program);
+
+        SP2.addAttribute('position', 3);
+        SP2.addAttribute('color',    4);
+        SP2.addAttribute('textureCoord', 2);
+        
+        SP2.addUniform('texture');
+        SP2.addUniform('mvpMatrix');
+        SP2.addUniform('filterType');
+
+        // ------------------------------< attribute >------------------------------
+
+        // 頂点の位置
+        let position_ = [
+            -1.0,  1.0,  0.0,
+            1.0,  1.0,  0.0,
+            -1.0, -1.0,  0.0,
+            1.0, -1.0,  0.0
+        ];
+
+        // 頂点色
+        let color_ = [
+            1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0
+	    ];
+
+        // テクスチャ座標
+        let textureCoord_ = [
+            0.0, 0.0,
+            1.0, 0.0,
+            0.0, 1.0,
+            1.0, 1.0,
+        ];
+
+        // 頂点インデックス
+        let index_ = [
+            0, 1, 2,
+		    3, 2, 1
+        ];
+        
+        let planeData_ = {
+            pos : SP2.createVbo(position_),
+            col : SP2.createVbo(color_),
+            tex : SP2.createVbo(textureCoord_),
+            ibo : SP2.createIbo(index_)
+        }    
+    
+    // ------------------------------< uniform >------------------------------
+        let q_ = quat.create();
+	    let camPosition_ = [0, 0, 4];
+	    let camUpDirection_ = [0, 1, 0];
+        let lookAtPosition_ = [0, 0, 0];
+
+        // mouse event
         let mouseMove = (e) => {
+            let rect = c.getBoundingClientRect();
             let cw = c.width;
             let ch = c.height;
-            let x = e.clientX - c.offsetLeft - cw / 2;
-            let y = e.clientY - c.offsetTop  - ch / 2;
+            let x = e.clientX - rect.left - cw / 2;
+            let y = e.clientY - rect.top  - ch / 2;
             let sq = Math.sqrt(x * x + y * y);
             let r = sq * 2.0 * Math.PI / Math.sqrt(cw * cw + ch * ch);
             if (sq != 1) {
@@ -116,17 +272,25 @@
         }
         c.addEventListener('mousemove', mouseMove);
 
+    // ------------------------------< frame buffer >------------------------------
+        // フレームバッファオブジェクトの取得
+        let fBuffer = createFramebuffer(c.width, c.height);
     // ------------------------------< loop >------------------------------
+    
         let count = 0;
         function loop(){
             count++;
+
+            // ------------------------------< frame buffer >------------------------------
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fBuffer.f);
             let rad = (count % 360) * Math.PI / 180;
-
+            
             SP.clearScene();
+            gl.useProgram(SP.program);
 
+            SP.setAttribute([pos_vbo, nor_vbo, col_vbo], ibo);
             vec3.transformQuat(camPosition,     [0, 0, 10], q);
             vec3.transformQuat(camUpDirection,  [0, 1, 0],  q);
-
             mat4.perspective(pMatrix, Math.PI / 4, c.width / c.height, 1, 100);
             mat4.lookAt(vMatrix, camPosition, lookAtPosition, camUpDirection);
 
@@ -134,10 +298,8 @@
             vpMatrix = mat4.create();
             mMatrix = mat4.create();
             mvpMatrix = mat4.create();
-
             mat4.multiply(vpMatrix, vpMatrix, pMatrix);
             mat4.multiply(vpMatrix, vpMatrix, vMatrix);
-
             // mat4.rotate(mMatrix, mMatrix, rad, [1, 0, 0]);
             mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
             mat4.invert(invMatrix, mMatrix);
@@ -151,6 +313,46 @@
             
             gl.drawElements(gl.TRIANGLES, torus.index.length, gl.UNSIGNED_SHORT, 0);
 
+        
+            // フレームバッファのバインドを解除
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            // ------------------------------<  >------------------------------
+            SP2.clearScene([0.1, 0.1, 0.1, 1.0]);
+
+            gl.useProgram(SP2.program);            
+            SP2.setAttribute([planeData_.pos, planeData_.col, planeData_.tex], planeData_.ibo);
+
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, fBuffer.t);
+            gl.uniform1i(SP2.getUniform('texture').location, 0);
+
+            let qMatrix_ = mat4.create();
+            let camDirection_ = vec3.create();
+            vec3.sub(camDirection_, lookAtPosition_ ,camPosition_);
+            
+            mat4.perspective(pMatrix, Math.PI / 4, c.width / c.height, 1, 100);
+            mat4.lookAt(vMatrix, camPosition_, lookAtPosition_, camUpDirection_);
+            // mat4.lookAt(invMatrix, lookAtPosition, camDirection, camUpDirection);
+            mat4.lookAt(invMatrix, lookAtPosition_, camPosition_, camUpDirection_);
+            mat4.multiply(vMatrix, vMatrix, qMatrix_);
+            mat4.multiply(invMatrix, invMatrix, qMatrix_);
+
+            // vpMatrix
+            vpMatrix = mat4.create();
+            mat4.multiply(vpMatrix, vpMatrix, pMatrix);
+            mat4.multiply(vpMatrix, vpMatrix, vMatrix);
+            mMatrix = mat4.create();
+            mvpMatrix = mat4.create();
+            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
+            mat4.invert(invMatrix, invMatrix);
+
+            mMatrix = mat4.create();
+            mat4.translate(mMatrix, mMatrix, [0.0, 0.0, 1.0]);
+            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
+            gl.uniformMatrix4fv(SP2.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.uniform1i(SP2.getUniform('filterType').location, type);
+
+            gl.drawElements(gl.TRIANGLES, index_.length, gl.UNSIGNED_SHORT, 0);
 
             // 描画
             gl.flush();
@@ -158,6 +360,50 @@
             setTimeout(loop, 1000 / 60);
         }
         loop();
+
+        function createFramebuffer(width, height){
+            // フレームバッファの生成
+            let frameBuffer = gl.createFramebuffer();
+            
+            // フレームバッファをWebGLにバインド
+            gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuffer);
+            
+            // 深度バッファ用レンダーバッファの生成とバインド
+            let depthRenderBuffer = gl.createRenderbuffer();
+            gl.bindRenderbuffer(gl.RENDERBUFFER, depthRenderBuffer);
+            
+            // レンダーバッファを深度バッファとして設定
+            gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+            
+            // フレームバッファにレンダーバッファを関連付ける
+            gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthRenderBuffer);
+            
+            // フレームバッファ用テクスチャの生成
+            let fTexture = gl.createTexture();
+            
+            // フレームバッファ用のテクスチャをバインド
+            gl.bindTexture(gl.TEXTURE_2D, fTexture);
+            
+            // フレームバッファ用のテクスチャにカラー用のメモリ領域を確保
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            
+            // テクスチャパラメータ
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            
+            // フレームバッファにテクスチャを関連付ける
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, fTexture, 0);
+            
+            // 各種オブジェクトのバインドを解除
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+            
+            // オブジェクトを返して終了
+            return {f : frameBuffer, d : depthRenderBuffer, t : fTexture};
+        }
     };
 
     class ShaderProgram {
@@ -174,6 +420,7 @@
 
             this.attArray = new Array();
             this.uniArray = new Array();
+            this.texArray = new Array();
             this.textNum = 0;
 
             this.vbo = null;
@@ -182,7 +429,10 @@
             // culling and depthtest
             this.gl.enable(this.gl.DEPTH_TEST);
             this.gl.depthFunc(this.gl.LEQUAL);
+            this.gl.frontFace(this.gl.CW);
             // this.gl.enable(this.gl.CULL_FACE);
+
+            this.gl.disable(this.gl.STENCIL_TEST);
         }
     
         // シェーダを生成する関数
@@ -247,17 +497,24 @@
         }
 
         addTexture(name, texture) {
-            let uni = this.getUniform(name);
-            uni.texture = texture;
-            uni.textNum = this.textNum;
+            this.texArray.push({
+                name: name,
+                texture: texture,
+                textNum: this.textNum
+            });            
             this.textNum++;
         }
 
-        useTexture(name) {
-            let uni = this.getUniform(name);
-            this.gl.activeTexture(this.gl.TEXTURE0 + uni.textNum);
-            this.gl.bindTexture(this.gl.TEXTURE_2D, uni.texture);
-            this.gl.uniform1i(uni.location, uni.textNum);
+        getTexture(name) {
+            return this.texArray.find((tex) => (tex.name === name));
+        }
+
+        useTexture(texName, uniName) {
+            let tex = this.getTexture(texName);
+            let uni = this.getUniform(uniName);
+            this.gl.activeTexture(this.gl.TEXTURE0 + tex.textNum);
+            this.gl.bindTexture(this.gl.TEXTURE_2D, tex.texture);
+            this.gl.uniform1i(uni.location, tex.textNum);
         }
 
         // VBOをバインドし登録する関数
@@ -293,10 +550,15 @@
             return this.uniArray.find((uni) => (uni.name === name));
         }
 
-        clearScene() {
-            this.gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        clearScene(color) {
+            let cc = [0.0, 0.0, 0.0, 1.0];
+            if (color) {
+                for (let i = 0; i < color.length; i++) cc[i] = color[i];
+            }
+            this.gl.clearColor(cc[0], cc[1], cc[2], cc[3]);
             this.gl.clearDepth(1.0);
-            this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
+            this.gl.clearStencil(0);
+            this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT | this.gl.STENCIL_BUFFER_BIT);
         }
     }
 

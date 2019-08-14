@@ -6,43 +6,25 @@
 <canvas id="canvas"></canvas><br/>
 <script src='https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js'></script>
 <script id="vs" type="x-shader/x-vertex">
-    attribute vec3 position;
-    attribute vec3 normal;
-    attribute vec4 color;
-    uniform   mat4 mvpMatrix;
-    uniform   mat4 mMatrix;
-    varying   vec3 vPosition;
-    varying   vec3 vNormal;
-    varying   vec4 vColor;
+    attribute vec3  position;
+    attribute vec4  color;
+    uniform   mat4  mvpMatrix;
+    varying   vec4  vColor;
 
     void main(void){
-        vPosition   = (mMatrix * vec4(position, 1.0)).xyz;
-        vNormal     = normal;
-        vColor      = color;
-        gl_Position = mvpMatrix * vec4(position, 1.0);
-    }	
+       vColor       = color;
+//        vColor       = vec4(1.0, 1.0, 0.0, 1.0);
+        gl_Position  = mvpMatrix * vec4(position, 1.0);
+        gl_PointSize = 3.0;
+    }
 </script>
 
 <script id="fs" type="x-shader/x-fragment">
     precision mediump float;
-
-    uniform mat4 invMatrix;
-    uniform vec3 lightPosition;
-    uniform vec3 camDirection;
-    uniform vec4 ambientColor;
-    varying vec3 vPosition;
-    varying vec3 vNormal;
     varying vec4 vColor;
 
     void main(void){
-        vec3  lightVec  = lightPosition - vPosition;
-        vec3  invLight  = normalize(invMatrix * vec4(lightVec, 0.0)).xyz;
-        vec3  invCam    = normalize(invMatrix * vec4(camDirection, 0.0)).xyz;
-        vec3  halfLC    = normalize(invLight + invCam);
-        float diffuse   = clamp(dot(vNormal, invLight), 0.0, 1.0) + 0.2;
-        float specular  = pow(clamp(dot(vNormal, halfLC), 0.0, 1.0), 50.0);
-        vec4  destColor = vColor * vec4(vec3(diffuse), 1.0) + vec4(vec3(specular), 1.0) + ambientColor;
-        gl_FragColor    = destColor;
+        gl_FragColor = vColor;
     }
 </script>
 
@@ -61,26 +43,38 @@
         gl.useProgram(SP.program);
 
         SP.addAttribute('position', 3);
-        SP.addAttribute('normal',   3);
-        SP.addAttribute('color',    4);
-        
+        SP.addAttribute('color',    4);        
         SP.addUniform('mvpMatrix');
-        SP.addUniform('mMatrix');
-        SP.addUniform('invMatrix');
-        SP.addUniform('lightPosition');
-        SP.addUniform('camDirection');
-        SP.addUniform('ambientColor');
 
         // ------------------------------< attribute >------------------------------
 
-        // トーラスのデータを生成
-        let torus = new Torus(32, 32, 0.5, 1.5);
-        const pos_vbo = SP.createVbo(torus.position);
-        const nor_vbo = SP.createVbo(torus.normal);
-        const col_vbo = SP.createVbo(torus.color);
-        const ibo     = SP.createIbo(torus.index);
-        SP.setAttribute([pos_vbo, nor_vbo, col_vbo], ibo);
-    
+        // 線の頂点位置
+        let position = [
+            -1.0, -1.0,  0.0,
+            1.0, -1.0,  0.0,
+            -1.0,  1.0,  0.0,
+            1.0,  1.0,  0.0
+        ];
+        
+        // 線の頂点色
+        let color = [
+            1.0, 1.0, 1.0, 1.0,
+            1.0, 0.0, 0.0, 1.0,
+            0.0, 1.0, 0.0, 1.0,
+            0.0, 0.0, 1.0, 1.0
+        ];        
+
+        let planeData = {
+            pos : SP.createVbo(position),
+            col : SP.createVbo(color),
+        }
+
+        let sphere = new Sphere(16, 16, 2.0, [0.7, 0.2, 0.1, 1.0]);
+        let sphereData = {
+            pos : SP.createVbo(sphere.position),
+            col : SP.createVbo(sphere.color),
+        }
+
     
     // ------------------------------< uniform >------------------------------
         let pMatrix = mat4.create();
@@ -88,17 +82,13 @@
         let mMatrix = mat4.create();
         let vpMatrix = mat4.create();
         let mvpMatrix = mat4.create();
-        let invMatrix = mat4.create();
-        
-        let lightPosition = [30.0, 30.0, 30.0];
-        let ambientColor = [0.1, 0.1, 0.1, 1.0];
 
         let q = quat.create();
-	    let camPosition = [0, 0, 10];
+        let camPosition = [0.0, 5.0, 10.0];
 	    let camUpDirection = [0, 1, 0];
         let lookAtPosition = [0, 0, 0];
 
-    // mouse event
+        // mouse event
         let mouseMove = (e) => {
             let cw = c.width;
             let ch = c.height;
@@ -111,7 +101,7 @@
                 x *= sq;
                 y *= sq;
             }
-            quat.setAxisAngle(q, [y, x, 0], -r);
+            quat.setAxisAngle(q, [y, x, 0], r);
             quat.normalize(q, q);
         }
         c.addEventListener('mousemove', mouseMove);
@@ -122,39 +112,51 @@
             count++;
             let rad = (count % 360) * Math.PI / 180;
 
+            // canvasを初期化
             SP.clearScene();
 
-            vec3.transformQuat(camPosition,     [0, 0, 10], q);
-            vec3.transformQuat(camUpDirection,  [0, 1, 0],  q);
+            let qMatrix = mat4.create();
+            mat4.fromQuat(qMatrix, q);
 
-            mat4.perspective(pMatrix, Math.PI / 4, c.width / c.height, 1, 100);
-            mat4.lookAt(vMatrix, camPosition, lookAtPosition, camUpDirection);
+            mat4.lookAt(vMatrix, camPosition, lookAtPosition, camUpDirection);        
+            mat4.multiply(vMatrix, vMatrix, qMatrix);
+            mat4.perspective(pMatrix, Math.PI / 4, c.width / c.height, 0.1, 100);
 
             // vpMatrix
             vpMatrix = mat4.create();
-            mMatrix = mat4.create();
-            mvpMatrix = mat4.create();
-
             mat4.multiply(vpMatrix, vpMatrix, pMatrix);
             mat4.multiply(vpMatrix, vpMatrix, vMatrix);
 
-            // mat4.rotate(mMatrix, mMatrix, rad, [1, 0, 0]);
+            mMatrix = mat4.create();
+            mvpMatrix = mat4.create();
+            mat4.rotate(mMatrix, mMatrix, rad, [1, 0, 0]);
             mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
-            mat4.invert(invMatrix, mMatrix);
-            
+
+            // 点を描画
+            SP.setAttribute([sphereData.pos, sphereData.col]);
+            mMatrix = mat4.create();
+            mat4.rotate(mMatrix, mMatrix, rad, [0, 1, 0]);
+            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
+
             gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
-            gl.uniformMatrix4fv(SP.getUniform('mMatrix').location, false, mMatrix);
-            gl.uniformMatrix4fv(SP.getUniform('invMatrix').location, false, invMatrix);
-            gl.uniform3fv(SP.getUniform('lightPosition').location, lightPosition);
-            gl.uniform3fv(SP.getUniform('camDirection').location, camPosition);
-            gl.uniform4fv(SP.getUniform('ambientColor').location, ambientColor);
+            gl.drawArrays(gl.POINTS, 0, sphere.position.length / 3);
             
-            gl.drawElements(gl.TRIANGLES, torus.index.length, gl.UNSIGNED_SHORT, 0);
-
-
-            // 描画
+            // 線のプリミティブタイプを判別
+            let lineOption = gl.LINES;
+            
+            // 線を描画
+            SP.setAttribute([planeData.pos, planeData.col]);
+            mMatrix = mat4.create();
+            mat4.rotate(mMatrix, mMatrix, Math.PI / 2, [1, 0, 0]);
+            mat4.scale(mMatrix, mMatrix, [3.0, 3.0, 1.0]);
+            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
+            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.drawArrays(lineOption, 0, position.length / 3);
+            
+            // コンテキストの再描画
             gl.flush();
-    
+
+        
             setTimeout(loop, 1000 / 60);
         }
         loop();
@@ -182,6 +184,7 @@
             // culling and depthtest
             this.gl.enable(this.gl.DEPTH_TEST);
             this.gl.depthFunc(this.gl.LEQUAL);
+            this.gl.frontFace(this.gl.CW);
             // this.gl.enable(this.gl.CULL_FACE);
         }
     

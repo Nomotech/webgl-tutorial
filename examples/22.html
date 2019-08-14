@@ -6,43 +6,29 @@
 <canvas id="canvas"></canvas><br/>
 <script src='https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js'></script>
 <script id="vs" type="x-shader/x-vertex">
-    attribute vec3 position;
-    attribute vec3 normal;
-    attribute vec4 color;
-    uniform   mat4 mvpMatrix;
-    uniform   mat4 mMatrix;
-    varying   vec3 vPosition;
-    varying   vec3 vNormal;
-    varying   vec4 vColor;
-
+    attribute vec3  position;
+    attribute vec4  color;
+    attribute vec2  textureCoord;
+    uniform   mat4  mvpMatrix;
+    varying   vec4  vColor;
+    varying   vec2  vTextureCoord;
+    
     void main(void){
-        vPosition   = (mMatrix * vec4(position, 1.0)).xyz;
-        vNormal     = normal;
-        vColor      = color;
-        gl_Position = mvpMatrix * vec4(position, 1.0);
-    }	
+        vColor        = color;
+        vTextureCoord = textureCoord;
+        gl_Position   = mvpMatrix * vec4(position, 1.0);
+    }
 </script>
 
 <script id="fs" type="x-shader/x-fragment">
     precision mediump float;
 
-    uniform mat4 invMatrix;
-    uniform vec3 lightPosition;
-    uniform vec3 camDirection;
-    uniform vec4 ambientColor;
-    varying vec3 vPosition;
-    varying vec3 vNormal;
-    varying vec4 vColor;
-
+    uniform sampler2D texture;
+    varying vec4      vColor;
+    varying vec2      vTextureCoord;
+    
     void main(void){
-        vec3  lightVec  = lightPosition - vPosition;
-        vec3  invLight  = normalize(invMatrix * vec4(lightVec, 0.0)).xyz;
-        vec3  invCam    = normalize(invMatrix * vec4(camDirection, 0.0)).xyz;
-        vec3  halfLC    = normalize(invLight + invCam);
-        float diffuse   = clamp(dot(vNormal, invLight), 0.0, 1.0) + 0.2;
-        float specular  = pow(clamp(dot(vNormal, halfLC), 0.0, 1.0), 50.0);
-        vec4  destColor = vColor * vec4(vec3(diffuse), 1.0) + vec4(vec3(specular), 1.0) + ambientColor;
-        gl_FragColor    = destColor;
+        gl_FragColor = texture2D(texture, vTextureCoord);
     }
 </script>
 
@@ -54,32 +40,60 @@
         c.height = 400;
 
         // webglコンテキストを取得
-        const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+        const gl = c.getContext('webgl' , {stencil: true}) || c.getContext('experimental-webgl', {stencil: true});
        
         // shader program
         let SP = new ShaderProgram(gl, 'vs', 'fs');
         gl.useProgram(SP.program);
 
         SP.addAttribute('position', 3);
-        SP.addAttribute('normal',   3);
         SP.addAttribute('color',    4);
+        SP.addAttribute('textureCoord', 2);
+
         
+        SP.addUniform('texture');
         SP.addUniform('mvpMatrix');
-        SP.addUniform('mMatrix');
-        SP.addUniform('invMatrix');
-        SP.addUniform('lightPosition');
-        SP.addUniform('camDirection');
-        SP.addUniform('ambientColor');
 
         // ------------------------------< attribute >------------------------------
 
-        // トーラスのデータを生成
-        let torus = new Torus(32, 32, 0.5, 1.5);
-        const pos_vbo = SP.createVbo(torus.position);
-        const nor_vbo = SP.createVbo(torus.normal);
-        const col_vbo = SP.createVbo(torus.color);
-        const ibo     = SP.createIbo(torus.index);
-        SP.setAttribute([pos_vbo, nor_vbo, col_vbo], ibo);
+        // 頂点の位置
+        let position = [
+            -1.0,  1.0,  0.0,
+            1.0,  1.0,  0.0,
+            -1.0, -1.0,  0.0,
+            1.0, -1.0,  0.0
+        ];
+
+        // 頂点色
+        let color = [
+            1.0, 0.0, 0.0, 1.0,
+            0.0, 1.0, 0.0, 1.0,
+            0.0, 0.0, 1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0
+        ];
+
+        // テクスチャ座標
+        let textureCoord = [
+            0.0, 0.0,
+            1.0, 0.0,
+            0.0, 1.0,
+            1.0, 1.0,
+        ];
+
+        // 頂点インデックス
+        let index = [
+            2, 1, 0,
+            1, 2, 3
+        ];
+        
+        let planeData = {
+            pos : SP.createVbo(position),
+            col : SP.createVbo(color),
+            tex : SP.createVbo(textureCoord),
+            ibo : SP.createIbo(index)
+        }
+
+        SP.setAttribute([planeData.pos, planeData.col, planeData.tex], planeData.ibo);
     
     
     // ------------------------------< uniform >------------------------------
@@ -89,21 +103,24 @@
         let vpMatrix = mat4.create();
         let mvpMatrix = mat4.create();
         let invMatrix = mat4.create();
-        
-        let lightPosition = [30.0, 30.0, 30.0];
-        let ambientColor = [0.1, 0.1, 0.1, 1.0];
 
         let q = quat.create();
-	    let camPosition = [0, 0, 10];
+	    let camPosition = [0, 0, 5];
 	    let camUpDirection = [0, 1, 0];
         let lookAtPosition = [0, 0, 0];
 
-    // mouse event
+        // テクスチャを生成
+        SP.addTexture('texture0', await SP.createTexture('../sozai/0_128x128.png'));
+        SP.addTexture('texture1', await SP.createTexture('../sozai/1_128x128.png'));
+        SP.addTexture('texture2', await SP.createTexture('../sozai/2_128x128.png'));
+
+        // mouse event
         let mouseMove = (e) => {
+            let rect = c.getBoundingClientRect();
             let cw = c.width;
             let ch = c.height;
-            let x = e.clientX - c.offsetLeft - cw / 2;
-            let y = e.clientY - c.offsetTop  - ch / 2;
+            let x = e.clientX - rect.left - cw / 2;
+            let y = e.clientY - rect.top  - ch / 2;
             let sq = Math.sqrt(x * x + y * y);
             let r = sq * 2.0 * Math.PI / Math.sqrt(cw * cw + ch * ch);
             if (sq != 1) {
@@ -111,7 +128,7 @@
                 x *= sq;
                 y *= sq;
             }
-            quat.setAxisAngle(q, [y, x, 0], -r);
+            quat.setAxisAngle(q, [y, x, 0], r);
             quat.normalize(q, q);
         }
         c.addEventListener('mousemove', mouseMove);
@@ -120,37 +137,75 @@
         let count = 0;
         function loop(){
             count++;
-            let rad = (count % 360) * Math.PI / 180;
 
             SP.clearScene();
 
-            vec3.transformQuat(camPosition,     [0, 0, 10], q);
-            vec3.transformQuat(camUpDirection,  [0, 1, 0],  q);
-
+            let qMatrix = mat4.create();
+            mat4.fromQuat(qMatrix, q);
+            let camDirection = vec3.create();
+            vec3.sub(camDirection, lookAtPosition ,camPosition);
+            
             mat4.perspective(pMatrix, Math.PI / 4, c.width / c.height, 1, 100);
             mat4.lookAt(vMatrix, camPosition, lookAtPosition, camUpDirection);
+            // mat4.lookAt(invMatrix, lookAtPosition, camDirection, camUpDirection);
+            mat4.lookAt(invMatrix, lookAtPosition, camPosition, camUpDirection);
+            
+            mat4.multiply(vMatrix, vMatrix, qMatrix);
+            mat4.multiply(invMatrix, invMatrix, qMatrix);
 
             // vpMatrix
             vpMatrix = mat4.create();
-            mMatrix = mat4.create();
-            mvpMatrix = mat4.create();
 
             mat4.multiply(vpMatrix, vpMatrix, pMatrix);
             mat4.multiply(vpMatrix, vpMatrix, vMatrix);
 
-            // mat4.rotate(mMatrix, mMatrix, rad, [1, 0, 0]);
-            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
-            mat4.invert(invMatrix, mMatrix);
-            
-            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
-            gl.uniformMatrix4fv(SP.getUniform('mMatrix').location, false, mMatrix);
-            gl.uniformMatrix4fv(SP.getUniform('invMatrix').location, false, invMatrix);
-            gl.uniform3fv(SP.getUniform('lightPosition').location, lightPosition);
-            gl.uniform3fv(SP.getUniform('camDirection').location, camPosition);
-            gl.uniform4fv(SP.getUniform('ambientColor').location, ambientColor);
-            
-            gl.drawElements(gl.TRIANGLES, torus.index.length, gl.UNSIGNED_SHORT, 0);
 
+            mMatrix = mat4.create();
+            mvpMatrix = mat4.create();
+            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
+            mat4.invert(invMatrix, invMatrix);
+
+            // ステンシルテストを有効にする
+            gl.enable(gl.STENCIL_TEST);
+
+            // 0
+            SP.useTexture('texture0', 'texture');
+            gl.stencilFunc(gl.ALWAYS, 1, ~0);
+    		gl.stencilOp(gl.KEEP, gl.REPLACE, gl.REPLACE);
+
+            mMatrix = mat4.create();
+            mat4.translate(mMatrix, mMatrix, [0.0, 0.0, -1.0]);
+            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
+            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.drawElements(gl.TRIANGLES, index.length, gl.UNSIGNED_SHORT, 0);
+
+            // 1
+            SP.useTexture('texture1', 'texture');
+            gl.stencilFunc(gl.ALWAYS, 0, ~0);
+    		gl.stencilOp(gl.KEEP, gl.INCR, gl.INCR);
+    
+            mMatrix = mat4.create();
+            mat4.translate(mMatrix, mMatrix, [0.0, 0.0, 0.0]);
+            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);        
+            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.drawElements(gl.TRIANGLES, index.length, gl.UNSIGNED_SHORT, 0);
+            
+            // 2
+            SP.useTexture('texture2', 'texture');
+            gl.stencilFunc(gl.EQUAL, 2, ~0);
+    		gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+            
+            mMatrix = mat4.create();
+            mat4.translate(mMatrix, mMatrix, [0.0, 0.0, 1.0]);
+            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
+            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.drawElements(gl.TRIANGLES, index.length, gl.UNSIGNED_SHORT, 0);
+
+
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            
+            // ステンシルテストを無効にする
+            gl.disable(gl.STENCIL_TEST);
 
             // 描画
             gl.flush();
@@ -174,6 +229,7 @@
 
             this.attArray = new Array();
             this.uniArray = new Array();
+            this.texArray = new Array();
             this.textNum = 0;
 
             this.vbo = null;
@@ -182,7 +238,10 @@
             // culling and depthtest
             this.gl.enable(this.gl.DEPTH_TEST);
             this.gl.depthFunc(this.gl.LEQUAL);
+            this.gl.frontFace(this.gl.CW);
             // this.gl.enable(this.gl.CULL_FACE);
+
+            this.gl.disable(this.gl.STENCIL_TEST);
         }
     
         // シェーダを生成する関数
@@ -247,17 +306,24 @@
         }
 
         addTexture(name, texture) {
-            let uni = this.getUniform(name);
-            uni.texture = texture;
-            uni.textNum = this.textNum;
+            this.texArray.push({
+                name: name,
+                texture: texture,
+                textNum: this.textNum
+            });            
             this.textNum++;
         }
 
-        useTexture(name) {
-            let uni = this.getUniform(name);
-            this.gl.activeTexture(this.gl.TEXTURE0 + uni.textNum);
-            this.gl.bindTexture(this.gl.TEXTURE_2D, uni.texture);
-            this.gl.uniform1i(uni.location, uni.textNum);
+        getTexture(name) {
+            return this.texArray.find((tex) => (tex.name === name));
+        }
+
+        useTexture(texName, uniName) {
+            let tex = this.getTexture(texName);
+            let uni = this.getUniform(uniName);
+            this.gl.activeTexture(this.gl.TEXTURE0 + tex.textNum);
+            this.gl.bindTexture(this.gl.TEXTURE_2D, tex.texture);
+            this.gl.uniform1i(uni.location, tex.textNum);
         }
 
         // VBOをバインドし登録する関数
@@ -296,7 +362,8 @@
         clearScene() {
             this.gl.clearColor(0.0, 0.0, 0.0, 1.0);
             this.gl.clearDepth(1.0);
-            this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
+            this.gl.clearStencil(0);
+            this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT | this.gl.STENCIL_BUFFER_BIT);
         }
     }
 

@@ -3,86 +3,117 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
 <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
 
+
 <canvas id="canvas"></canvas><br/>
+<input type="range" value="0.0" min="0.0" max="1.0" step="0.01" id="refIdx">
+
 <script src='https://cdnjs.cloudflare.com/ajax/libs/gl-matrix/2.8.1/gl-matrix-min.js'></script>
+
 <script id="vs" type="x-shader/x-vertex">
     attribute vec3 position;
     attribute vec3 normal;
     attribute vec4 color;
-    uniform   mat4 mvpMatrix;
     uniform   mat4 mMatrix;
+    uniform   mat4 mvpMatrix;
     varying   vec3 vPosition;
     varying   vec3 vNormal;
     varying   vec4 vColor;
-
+    
     void main(void){
         vPosition   = (mMatrix * vec4(position, 1.0)).xyz;
-        vNormal     = normal;
+//        vNormal     = (mMatrix * vec4(normal, 0.0)).xyz;
+        vNormal     = normalize((mMatrix * vec4(normal, 0.0)).xyz);
         vColor      = color;
         gl_Position = mvpMatrix * vec4(position, 1.0);
-    }	
+    }
 </script>
-
+            
 <script id="fs" type="x-shader/x-fragment">
     precision mediump float;
-
-    uniform mat4 invMatrix;
-    uniform vec3 lightPosition;
-    uniform vec3 camDirection;
-    uniform vec4 ambientColor;
-    varying vec3 vPosition;
-    varying vec3 vNormal;
-    varying vec4 vColor;
-
+    
+    uniform vec3        camPosition;
+    uniform samplerCube cubeTexture;
+    uniform bool        reflection;
+    uniform float       refIdx;
+    varying vec3        vPosition;
+    varying vec3        vNormal;
+    varying vec4        vColor;
+    
     void main(void){
-        vec3  lightVec  = lightPosition - vPosition;
-        vec3  invLight  = normalize(invMatrix * vec4(lightVec, 0.0)).xyz;
-        vec3  invCam    = normalize(invMatrix * vec4(camDirection, 0.0)).xyz;
-        vec3  halfLC    = normalize(invLight + invCam);
-        float diffuse   = clamp(dot(vNormal, invLight), 0.0, 1.0) + 0.2;
-        float specular  = pow(clamp(dot(vNormal, halfLC), 0.0, 1.0), 50.0);
-        vec4  destColor = vColor * vec4(vec3(diffuse), 1.0) + vec4(vec3(specular), 1.0) + ambientColor;
-        gl_FragColor    = destColor;
+        vec3 ref;
+        if(reflection){
+//            ref = reflect(vPosition - camPosition, vNormal);
+            ref = refract(normalize(vPosition - camPosition), vNormal, refIdx);
+        }else{
+            ref = vNormal;
+        }
+        vec4 envColor  = textureCube(cubeTexture, ref);
+        vec4 destColor = vColor * envColor;
+        gl_FragColor   = destColor;
     }
 </script>
 
 <script type="text/javascript">
+    let refIdx = 0.0;
+    $('#refIdx').on("input", function () {
+        refIdx = Number($('#refIdx').val());
+    })
     window.onload = async () => {
         // canvasエレメントを取得
         const c = document.getElementById('canvas');
         c.width = 500;
-        c.height = 400;
+        c.height = 500;
 
         // webglコンテキストを取得
-        const gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+        const gl = c.getContext('webgl' , {stencil: true}) || c.getContext('experimental-webgl', {stencil: true});
        
-        // shader program
+    // ------------------------------< shader program >------------------------------
         let SP = new ShaderProgram(gl, 'vs', 'fs');
         gl.useProgram(SP.program);
+        gl.disable(gl.CULL_FACE)
 
-        SP.addAttribute('position', 3);
-        SP.addAttribute('normal',   3);
-        SP.addAttribute('color',    4);
+        SP.addAttribute('position',     3);
+        SP.addAttribute('normal',       3);
+        SP.addAttribute('color',        4);
         
         SP.addUniform('mvpMatrix');
         SP.addUniform('mMatrix');
-        SP.addUniform('invMatrix');
-        SP.addUniform('lightPosition');
-        SP.addUniform('camDirection');
-        SP.addUniform('ambientColor');
+        SP.addUniform('camPosition');
+        SP.addUniform('cubeTexture');
+        SP.addUniform('reflection');
+        SP.addUniform('refIdx');
+        
 
         // ------------------------------< attribute >------------------------------
+        // キューブのデータを生成
+        let cube = new Cube(2.0, [1.0, 1.0, 1.0, 1.0]);
+        let cubeData = {
+            pos: SP.createVbo(cube.position),
+            nor: SP.createVbo(cube.normal),
+            col: SP.createVbo(cube.color),
+            idx: SP.createIbo(cube.index)
+        }
+
+        // 球体のデータを生成
+        let sphere = new Sphere(64, 64, 2.5, [1.0, 1.0, 1.0, 1.0]);
+        let sphereData = {
+            pos: SP.createVbo(sphere.position),
+            nor: SP.createVbo(sphere.normal),
+            col: SP.createVbo(sphere.color),
+            idx: SP.createIbo(sphere.index)
+        }
 
         // トーラスのデータを生成
-        let torus = new Torus(32, 32, 0.5, 1.5);
-        const pos_vbo = SP.createVbo(torus.position);
-        const nor_vbo = SP.createVbo(torus.normal);
-        const col_vbo = SP.createVbo(torus.color);
-        const ibo     = SP.createIbo(torus.index);
-        SP.setAttribute([pos_vbo, nor_vbo, col_vbo], ibo);
-    
-    
-    // ------------------------------< uniform >------------------------------
+        let torus = new Torus(64, 64, 1.0, 2.0, [1.0, 1.0, 1.0, 1.0]);
+        let torusData = {
+            pos: SP.createVbo(torus.position),
+            nor: SP.createVbo(torus.normal),
+            col: SP.createVbo(torus.color),
+            idx: SP.createIbo(torus.index)
+        }
+
+        
+        // ------------------------------< uniform >------------------------------
         let pMatrix = mat4.create();
         let vMatrix  = mat4.create();
         let mMatrix = mat4.create();
@@ -90,20 +121,31 @@
         let mvpMatrix = mat4.create();
         let invMatrix = mat4.create();
         
-        let lightPosition = [30.0, 30.0, 30.0];
-        let ambientColor = [0.1, 0.1, 0.1, 1.0];
 
         let q = quat.create();
-	    let camPosition = [0, 0, 10];
+	    let camPosition = [0, 0, 20];
 	    let camUpDirection = [0, 1, 0];
         let lookAtPosition = [0, 0, 0];
 
-    // mouse event
+        let cubeImageData = new Array( 
+            {src: '../sozai/cube_PX.png', target: gl.TEXTURE_CUBE_MAP_POSITIVE_X},
+            {src: '../sozai/cube_PY.png', target: gl.TEXTURE_CUBE_MAP_POSITIVE_Y},
+            {src: '../sozai/cube_PZ.png', target: gl.TEXTURE_CUBE_MAP_POSITIVE_Z},
+            {src: '../sozai/cube_NX.png', target: gl.TEXTURE_CUBE_MAP_NEGATIVE_X},
+            {src: '../sozai/cube_NY.png', target: gl.TEXTURE_CUBE_MAP_NEGATIVE_Y},
+            {src: '../sozai/cube_NZ.png', target: gl.TEXTURE_CUBE_MAP_NEGATIVE_Z}
+        );
+        SP.addTexture('cubeTexture', await SP.createCubeTexture(cubeImageData));
+        
+    // ------------------------------< loop >------------------------------
+
+        // mouse event
         let mouseMove = (e) => {
+            let rect = c.getBoundingClientRect();
             let cw = c.width;
             let ch = c.height;
-            let x = e.clientX - c.offsetLeft - cw / 2;
-            let y = e.clientY - c.offsetTop  - ch / 2;
+            let x = e.clientX - rect.left - cw / 2;
+            let y = e.clientY - rect.top  - ch / 2;
             let sq = Math.sqrt(x * x + y * y);
             let r = sq * 2.0 * Math.PI / Math.sqrt(cw * cw + ch * ch);
             if (sq != 1) {
@@ -115,43 +157,64 @@
             quat.normalize(q, q);
         }
         c.addEventListener('mousemove', mouseMove);
-
-    // ------------------------------< loop >------------------------------
+    
         let count = 0;
         function loop(){
             count++;
-            let rad = (count % 360) * Math.PI / 180;
+            let rad  = (count % 360) * Math.PI / 180;
+    		let rad2 = ((count + 180) % 360) * Math.PI / 180;
 
             SP.clearScene();
 
-            vec3.transformQuat(camPosition,     [0, 0, 10], q);
+            vec3.transformQuat(camPosition,     [0, 0, 20], q);
             vec3.transformQuat(camUpDirection,  [0, 1, 0],  q);
-
-            mat4.perspective(pMatrix, Math.PI / 4, c.width / c.height, 1, 100);
+            mat4.perspective(pMatrix, Math.PI / 4, c.width / c.height, 0.1, 200);
             mat4.lookAt(vMatrix, camPosition, lookAtPosition, camUpDirection);
 
-            // vpMatrix
+            // vp
             vpMatrix = mat4.create();
-            mMatrix = mat4.create();
             mvpMatrix = mat4.create();
-
             mat4.multiply(vpMatrix, vpMatrix, pMatrix);
             mat4.multiply(vpMatrix, vpMatrix, vMatrix);
 
-            // mat4.rotate(mMatrix, mMatrix, rad, [1, 0, 0]);
+            // cube
+            SP.setAttribute([cubeData.pos, cubeData.nor, cubeData.col], cubeData.idx);
+            SP.useCubeTexture('cubeTexture', 'cubeTexture');
+            mMatrix = mat4.create();
+            mat4.scale(mMatrix, mMatrix, [100.0, 100.0, 100.0]);
             mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
-            mat4.invert(invMatrix, mMatrix);
-            
-            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
             gl.uniformMatrix4fv(SP.getUniform('mMatrix').location, false, mMatrix);
-            gl.uniformMatrix4fv(SP.getUniform('invMatrix').location, false, invMatrix);
-            gl.uniform3fv(SP.getUniform('lightPosition').location, lightPosition);
-            gl.uniform3fv(SP.getUniform('camDirection').location, camPosition);
-            gl.uniform4fv(SP.getUniform('ambientColor').location, ambientColor);
-            
+            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.uniform3fv(SP.getUniform('camPosition').location, camPosition);
+            gl.uniform1i(SP.getUniform('reflection').location, false);
+            gl.drawElements(gl.TRIANGLES, cube.index.length, gl.UNSIGNED_SHORT, 0);
+
+            // sphere
+            SP.setAttribute([sphereData.pos, sphereData.nor, sphereData.col], sphereData.idx);
+            mMatrix = mat4.create();
+            mat4.rotate(mMatrix, mMatrix, rad, [0, 0, 1]);
+    		mat4.translate(mMatrix, mMatrix, [5.0, 0.0, 0.0]);
+            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
+            gl.uniformMatrix4fv(SP.getUniform('mMatrix').location, false, mMatrix);
+            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.uniform1i(SP.getUniform('reflection').location, true);
+            gl.uniform1f(SP.getUniform('refIdx').location, refIdx);
+            gl.drawElements(gl.TRIANGLES, sphere.index.length, gl.UNSIGNED_SHORT, 0);
+
+            // torus
+            SP.setAttribute([torusData.pos, torusData.nor, torusData.col], torusData.idx);
+            mMatrix = mat4.create();
+            mat4.rotate(mMatrix, mMatrix, rad2, [0, 0, 1]);
+            mat4.translate(mMatrix, mMatrix, [5.0, 0.0, 0.0]);
+            mat4.rotate(mMatrix, mMatrix, rad, [1, 0, 1]);
+            mat4.multiply(mvpMatrix, vpMatrix, mMatrix);
+            gl.uniformMatrix4fv(SP.getUniform('mMatrix').location, false, mMatrix);
+            gl.uniformMatrix4fv(SP.getUniform('mvpMatrix').location, false, mvpMatrix);
+            gl.uniform1i(SP.getUniform('reflection').location, true);
+            gl.uniform1f(SP.getUniform('refIdx').location, refIdx);
             gl.drawElements(gl.TRIANGLES, torus.index.length, gl.UNSIGNED_SHORT, 0);
 
-
+            
             // 描画
             gl.flush();
     
@@ -174,6 +237,7 @@
 
             this.attArray = new Array();
             this.uniArray = new Array();
+            this.texArray = new Array();
             this.textNum = 0;
 
             this.vbo = null;
@@ -182,7 +246,10 @@
             // culling and depthtest
             this.gl.enable(this.gl.DEPTH_TEST);
             this.gl.depthFunc(this.gl.LEQUAL);
-            // this.gl.enable(this.gl.CULL_FACE);
+            // this.gl.frontFace(this.gl.CW);
+            this.gl.enable(this.gl.CULL_FACE);
+
+            this.gl.disable(this.gl.STENCIL_TEST);
         }
     
         // シェーダを生成する関数
@@ -247,17 +314,72 @@
         }
 
         addTexture(name, texture) {
-            let uni = this.getUniform(name);
-            uni.texture = texture;
-            uni.textNum = this.textNum;
+            this.texArray.push({
+                name: name,
+                texture: texture,
+                textNum: this.textNum
+            });            
             this.textNum++;
         }
 
-        useTexture(name) {
-            let uni = this.getUniform(name);
-            this.gl.activeTexture(this.gl.TEXTURE0 + uni.textNum);
-            this.gl.bindTexture(this.gl.TEXTURE_2D, uni.texture);
-            this.gl.uniform1i(uni.location, uni.textNum);
+        getTexture(name) {
+            return this.texArray.find((tex) => (tex.name === name));
+        }
+
+        useTexture(texName, uniName) {
+            let tex = this.getTexture(texName);
+            let uni = this.getUniform(uniName);
+            this.gl.activeTexture(this.gl.TEXTURE0 + tex.textNum);
+            this.gl.bindTexture(this.gl.TEXTURE_2D, tex.texture);
+            this.gl.uniform1i(uni.location, tex.textNum);
+        }
+
+        // キューブマップテクスチャを生成する関数
+        createCubeTexture(data){
+            let count = 0;
+            return new Promise((resolve, reject) => {
+                let img = [];
+                for (let d of data) {
+                    let i = new Image();
+                    i.onload = () => {
+                        d.img = i;
+                        count++;
+                        if (count >= data.length) generateCubeMap(data, this.gl);
+                    };
+                    i.onerror = (e) => reject(e);
+                    i.src = d.src;
+                }
+                
+                // キューブマップを生成する関数
+                function generateCubeMap(data, gl){
+                    let tex = gl.createTexture();
+                    gl.bindTexture(gl.TEXTURE_CUBE_MAP, tex);
+                    for(let d of data){
+                        gl.texImage2D(d.target, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, d.img);
+                    }
+                    gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+                    
+                    // テクスチャパラメータの設定
+                    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                    
+                    // テクスチャのバインドを無効化
+                    gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
+
+                    resolve(tex);
+                }
+
+            });
+        }
+
+        useCubeTexture(texName, uniName) {
+            let tex = this.getTexture(texName);
+            let uni = this.getUniform(uniName);
+            this.gl.activeTexture(this.gl.TEXTURE0 + tex.textNum);
+            this.gl.bindTexture(this.gl.TEXTURE_CUBE_MAP, tex.texture);
+            this.gl.uniform1i(uni.location, tex.textNum);
         }
 
         // VBOをバインドし登録する関数
@@ -293,10 +415,15 @@
             return this.uniArray.find((uni) => (uni.name === name));
         }
 
-        clearScene() {
-            this.gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        clearScene(color) {
+            let cc = [0.0, 0.0, 0.0, 1.0];
+            if (color) {
+                for (let i = 0; i < color.length; i++) cc[i] = color[i];
+            }
+            this.gl.clearColor(cc[0], cc[1], cc[2], cc[3]);
             this.gl.clearDepth(1.0);
-            this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
+            this.gl.clearStencil(0);
+            this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT | this.gl.STENCIL_BUFFER_BIT);
         }
     }
 
@@ -307,6 +434,7 @@
             let col = new Array();
             let idx = new Array();
             let nor = new Array();
+            let st  = new Array();
             for(let i = 0; i <= row; i++){
                 let r = Math.PI * 2 / row * i;
                 let rr = Math.cos(r);
@@ -321,6 +449,11 @@
                     pos.push(tx, ty, tz);
                     nor.push(rx, ry, rz);
                     let tc = color ? color : HSVaToRGBa(360 / column * j, 1, 1, 1);
+                    let rs = 1 / column * j;
+                    let rt = 1 / row * i + 0.5;
+                    if(rt > 1.0){rt -= 1.0;}
+                    rt = 1.0 - rt;
+                    st.push(rs, rt);
                     col.push(tc[0], tc[1], tc[2], tc[3]);
                 }
             }
@@ -335,6 +468,7 @@
             this.color = col;
             this.index = idx;
             this.normal = nor;
+            this.st = st;
         }
     }
 
@@ -345,6 +479,7 @@
             let nor = new Array();
             let col = new Array();
             let idx = new Array();
+            let st  = new Array();
 
             for(let i = 0; i <= row; i++){
                 let r = Math.PI / row * i;
@@ -357,10 +492,11 @@
                     let tz = rr * rad * Math.sin(tr);
                     let rx = rr * Math.cos(tr);
                     let rz = rr * Math.sin(tr);
-                    let tc = color ? color : hsva(360 / row * i, 1, 1, 1);
+                    let tc = color ? color : HSVaToRGBa(360 / row * i, 1, 1, 1);
                     pos.push(tx, ty, tz);
                     nor.push(rx, ry, rz);
                     col.push(tc[0], tc[1], tc[2], tc[3]);
+                    st.push(1 - 1 / column * j, 1 / row * i);
                 }
             }
             let r = 0;
@@ -375,6 +511,50 @@
             this.color = col;
             this.index = idx;
             this.normal = nor;
+            this.st = st;
+        }
+    }
+
+    class Cube {
+        constructor(side, color) { 
+            let hs = side * 0.5;
+            this.position = [
+                -hs, -hs,  hs,  hs, -hs,  hs,  hs,  hs,  hs, -hs,  hs,  hs,
+                -hs, -hs, -hs, -hs,  hs, -hs,  hs,  hs, -hs,  hs, -hs, -hs,
+                -hs,  hs, -hs, -hs,  hs,  hs,  hs,  hs,  hs,  hs,  hs, -hs,
+                -hs, -hs, -hs,  hs, -hs, -hs,  hs, -hs,  hs, -hs, -hs,  hs,
+                hs, -hs, -hs,  hs,  hs, -hs,  hs,  hs,  hs,  hs, -hs,  hs,
+                -hs, -hs, -hs, -hs, -hs,  hs, -hs,  hs,  hs, -hs,  hs, -hs
+            ];
+            this.normal = [
+                -1.0, -1.0,  1.0,  1.0, -1.0,  1.0,  1.0,  1.0,  1.0, -1.0,  1.0,  1.0,
+                -1.0, -1.0, -1.0, -1.0,  1.0, -1.0,  1.0,  1.0, -1.0,  1.0, -1.0, -1.0,
+                -1.0,  1.0, -1.0, -1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0,  1.0, -1.0,
+                -1.0, -1.0, -1.0,  1.0, -1.0, -1.0,  1.0, -1.0,  1.0, -1.0, -1.0,  1.0,
+                1.0, -1.0, -1.0,  1.0,  1.0, -1.0,  1.0,  1.0,  1.0,  1.0, -1.0,  1.0,
+                -1.0, -1.0, -1.0, -1.0, -1.0,  1.0, -1.0,  1.0,  1.0, -1.0,  1.0, -1.0
+            ];
+            this.color = new Array();
+            for(let i = 0; i < this.position.length / 3; i++){
+                let tc = color ? color : HSVaToRGBa(360 / row * i, 1, 1, 1);
+                this.color.push(tc[0], tc[1], tc[2], tc[3]);
+            }
+            this.st = [
+                0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+                0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+                0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+                0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+                0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0,
+                0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0
+            ];
+            this.index = [
+                0,  1,  2,  0,  2,  3,
+                4,  5,  6,  4,  6,  7,
+                8,  9, 10,  8, 10, 11,
+                12, 13, 14, 12, 14, 15,
+                16, 17, 18, 16, 18, 19,
+                20, 21, 22, 20, 22, 23
+            ];
         }
     }
 
